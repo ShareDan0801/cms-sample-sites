@@ -1,0 +1,19 @@
+---
+/* =========================================================================
+ * サイト共通フッター（言語別文言）
+ * props: ui = uiFor(locale)
+ * ========================================================================= */
+const { ui } = Astro.props
+---
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <div>
+      <div class="site-footer__logo">DEMO<span>.</span></div>
+      <div class="site-footer__addr">{ui.footer.addr}</div>
+    </div>
+    <div class="site-footer__right">
+      © 2026 DEMO CO., LTD.<br>
+      <span>{ui.footer.powered}</span>
+    </div>
+  </div>
+</footer>

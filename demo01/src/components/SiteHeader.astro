@@ -1,0 +1,35 @@
+---
+/* =========================================================================
+ * サイト共通ヘッダー（ブランド＋グローバルナビ＋言語切替）
+ * -------------------------------------------------------------------------
+ * トップ／投稿詳細／プレビューで共有する。ナビのアンカーは言語別トップの各セクションを指す
+ * （homeHref を基点にするため、どの言語ページからでも正しい言語のトップへ戻る）。
+ *
+ * props:
+ *   locale        : 現在の言語コード
+ *   ui            : uiFor(locale) の戻り値（文言辞書）
+ *   homeHref      : その言語のトップURL（例 '/', '/en/'）
+ *   switcherLinks : LangSwitcher に渡す対応言語リンク
+ * ========================================================================= */
+import LangSwitcher from './LangSwitcher.astro'
+
+const { locale, ui, homeHref, switcherLinks = [] } = Astro.props
+const nav = ui.nav
+---
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href={homeHref} aria-label={ui.brandSub}>
+      <span class="brand__logo">DEMO<span>.</span></span>
+      <span class="brand__sub">{ui.brandSub}</span>
+    </a>
+    <nav class="gnav">
+      <a href={`${homeHref}#about`}>{nav.about}</a>
+      <a href={`${homeHref}#news`}>{nav.news}</a>
+      <a href={`${homeHref}#works`}>{nav.works}</a>
+      <a href={`${homeHref}#products`}>{nav.products}</a>
+      <a href={`${homeHref}#faq`}>{nav.faq}</a>
+      <LangSwitcher current={locale} links={switcherLinks} />
+      <a href={`${homeHref}#contact`} class="gnav__cta">{nav.contact}</a>
+    </nav>
+  </div>
+</header>

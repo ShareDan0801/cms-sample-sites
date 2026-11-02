@@ -1,0 +1,25 @@
+---
+/* =========================================================================
+ * 言語切替（多言語オプション・9.10）
+ * -------------------------------------------------------------------------
+ * ビルド時に言語別の静的ページを生成しているため、切替は該当言語ページへの <a> リンク
+ * （実行時の再取得なし）。対応言語が1つ（＝原文のみ）のときは表示しない。
+ *
+ * props:
+ *   current : 現在の言語コード（'ja' | 'en' | 'zh-Hant'）
+ *   links   : [{ code, label, href }] 対応言語ぶん（並び順＝表示順）
+ * ========================================================================= */
+const { current, links = [] } = Astro.props
+---
+{links.length > 1 && (
+  <div class="lang-switch" role="group" aria-label="言語切り替え / Language">
+    {links.map((l) => (
+      <a
+        href={l.href}
+        lang={l.code}
+        class:list={['lang-switch__item', { 'is-active': l.code === current }]}
+        aria-current={l.code === current ? 'true' : undefined}
+      >{l.label}</a>
+    ))}
+  </div>
+)}

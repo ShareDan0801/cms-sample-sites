@@ -1,0 +1,22 @@
+---
+/* =========================================================================
+ * demo-cms トップページ（言語別・/en/・/zh-Hant/）
+ * -------------------------------------------------------------------------
+ * 多言語オプション（9.10）で実際に生成できる言語だけをビルドする（原文 ja はルート / 側）。
+ * resolveAvailableLocales() がテナントの多言語設定を公開APIへ問い合わせて確定するため、
+ * 多言語が無効／未設定なら en・zh-Hant ページは生成されず、日本語のみのサイトとして成立する。
+ * ========================================================================= */
+import TopPage from '../../components/TopPage.astro'
+import { resolveAvailableLocales } from '../../lib/cms.mjs'
+import { localeMeta } from '../../lib/i18n.mjs'
+
+export async function getStaticPaths() {
+  const codes = await resolveAvailableLocales()
+  return codes
+    .filter((code) => code !== 'ja') // 原文はルート / で生成するためここでは除外
+    .map((code) => ({ params: { locale: localeMeta(code).path }, props: { locale: code } }))
+}
+
+const { locale } = Astro.props
+---
+<TopPage locale={locale} />

@@ -1,0 +1,26 @@
+---
+/* =========================================================================
+ * demo-cms 投稿詳細ページ（原文＝日本語・/posts/news/{slug}/）
+ * -------------------------------------------------------------------------
+ * 本体は src/components/PostPage.astro（言語別で共通）。この入口は原文（ja）で全 slug を列挙する。
+ * 他言語は src/pages/[locale]/posts/news/[slug].astro が同じコンポーネントを locale 付きで生成する。
+ * ========================================================================= */
+import { fetchAllPosts, fetchPostDetail } from '../../../lib/cms.mjs'
+import { readBuildPlan } from '../../../lib/build-plan.mjs'
+import PostPage from '../../../components/PostPage.astro'
+
+export async function getStaticPaths() {
+  // 増分ビルド（変更検知API・FUN-037）: 計画が incremental のときは変更（upsert）された slug のみ再生成する。
+  // full（初回・全体ビルド要求）／計画なし（素の astro build）は従来どおり公開中の全件を列挙する。
+  // incremental で生成されなかった既存ページはサーバー側にそのまま残り（FTPSミラーは削除しない）、削除分は
+  // デプロイ側が明示的に取り除く（scripts/print-deleted-paths.mjs）。
+  const plan = readBuildPlan()
+  const slugs =
+    plan.mode === 'incremental' ? plan.postSlugsUpsert : (await fetchAllPosts()).map((p) => p.slug)
+  const details = await Promise.all(slugs.map((slug) => fetchPostDetail(slug)))
+  return details.map((post) => ({ params: { slug: post.slug }, props: { post } }))
+}
+
+const { post } = Astro.props
+---
+<PostPage post={post} locale="ja" />

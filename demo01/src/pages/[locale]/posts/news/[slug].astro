@@ -1,0 +1,35 @@
+---
+/* =========================================================================
+ * demo-cms 投稿詳細ページ（言語別・/en/posts/news/{slug}/・/zh-Hant/posts/news/{slug}/）
+ * -------------------------------------------------------------------------
+ * 多言語オプション（9.10）で実際に生成できる言語 × 公開中の全投稿をビルドする（原文 ja は
+ * /posts/news/{slug}/ 側）。slug は言語共通のため、各言語ページは同じ slug を指す。
+ * ========================================================================= */
+import { fetchAllPosts, fetchPostDetail, resolveAvailableLocales } from '../../../../lib/cms.mjs'
+import { localeMeta } from '../../../../lib/i18n.mjs'
+import { readBuildPlan } from '../../../../lib/build-plan.mjs'
+import PostPage from '../../../../components/PostPage.astro'
+
+export async function getStaticPaths() {
+  // 増分ビルド（変更検知API・FUN-037）: incremental のときは変更（upsert）された slug のみを各言語で再生成する。
+  // slug は言語共通のため、計画の upsert slug をそのまま各言語に適用する。full／計画なしは全件（従来どおり）。
+  const plan = readBuildPlan()
+  const codes = (await resolveAvailableLocales()).filter((code) => code !== 'ja')
+  const paths = []
+  for (const code of codes) {
+    const meta = localeMeta(code)
+    const slugs =
+      plan.mode === 'incremental'
+        ? plan.postSlugsUpsert
+        : (await fetchAllPosts(meta.apiLocale)).map((p) => p.slug)
+    const details = await Promise.all(slugs.map((slug) => fetchPostDetail(slug, meta.apiLocale)))
+    for (const post of details) {
+      paths.push({ params: { locale: meta.path, slug: post.slug }, props: { post, locale: code } })
+    }
+  }
+  return paths
+}
+
+const { post, locale } = Astro.props
+---
+<PostPage post={post} locale={locale} />

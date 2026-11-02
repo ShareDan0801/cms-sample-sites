@@ -1,0 +1,23 @@
+{
+  "name": "sharedan-samples-demo01",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "ShareDan 簡易CMS デモ用サンプルサイト（ヘッドレス静的版）。Astro で静的ビルドし、さくらのレンタルサーバへ配信する。",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "plan": "node scripts/plan.mjs",
+    "build:incremental": "node scripts/plan.mjs && astro build",
+    "complete": "node scripts/complete.mjs",
+    "print-deleted-paths": "node scripts/print-deleted-paths.mjs",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "devDependencies": {
+    "astro": "^5.0.0"
+  },
+  "dependencies": {
+    "@sharedan/cms-sdk": "^0.7.2"
+  }
+}

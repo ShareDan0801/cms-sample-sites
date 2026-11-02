@@ -1,0 +1,19 @@
+/*
+Theme Name: DEMOサンプル（ShareDan 速度比較用）
+Theme URI: https://github.com/sharedan/sd-cms
+Author: ShareDan
+Author URI: https://sharedan.net
+Description: ShareDan CMS の速度比較用サンプルサイト（WordPress版）。デザイン「サンプルサイト.dc.html」を WordPress テーマとして実装したもの。お知らせ・FAQ・導入事例をカスタム投稿タイプ（DB）から WP_Query で描画し、「テーマ描画＋DBクエリ」の実負荷を再現する。ヘッドレスの静的HTML版（apps/samples/demo01）と同一のデザイン・CSS・JSを共有する。
+Version: 1.0.0
+Requires at least: 6.0
+Tested up to: 6.5
+Requires PHP: 8.0
+License: GNU General Public License v2 or later
+License URI: http://www.gnu.org/licenses/gpl-2.0.html
+Text Domain: demo
+*/
+
+/*
+ * 実際のスタイルは assets/css/theme.css（静的HTML版と同一）を functions.php で
+ * enqueue して読み込む。この style.css はテーマヘッダー定義のためのファイル。
+ */

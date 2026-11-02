@@ -1,0 +1,132 @@
+---
+/* =========================================================================
+ * demo-cms 投稿詳細ページ（既定種別 お知らせ・公開版・SSG・言語別）
+ * -------------------------------------------------------------------------
+ * 公開API `GET /api/v1/posts/news/{slug}`（locale 付き）の内容を **ビルド時** に取得して
+ * 静的HTMLへ焼き込む。記事本体のマークアップは src/lib/post-article.mjs の renderPostArticle()
+ * に集約し、プレビューページとまったく同じ見た目にする。
+ *
+ * パスワード保護（簡易認証・SCR-104）: 保護中は本文が null で返るため renderPostArticle が
+ * ゲートを描画し、実行時（public/js/cms.js）が unlock で本文へ差し替える。
+ *
+ * props: post（PostDetail）, locale（'ja' | 'en' | 'zh-Hant'）
+ * ========================================================================= */
+import { resolveAvailableLocales, renderProseMirror, extractText, DEMO_POST_PASSWORD } from '../lib/cms.mjs'
+import { renderPostArticle } from '../lib/post-article.mjs'
+import { uiFor, localeMeta, localeHref, fontsFor } from '../lib/i18n.mjs'
+import SiteHeader from './SiteHeader.astro'
+import SiteFooter from './SiteFooter.astro'
+
+const { post, locale = 'ja' } = Astro.props
+const lmeta = localeMeta(locale)
+const ui = uiFor(locale)
+const homeHref = localeHref(locale, '')
+
+// 言語切替（同じ投稿の各言語ページへ。slug は言語共通）。実際に生成できる言語だけ。
+const availableCodes = await resolveAvailableLocales()
+const switcherLinks = availableCodes.map((code) => ({
+  code,
+  label: localeMeta(code).label,
+  href: localeHref(code, `posts/news/${post.slug}/`),
+}))
+
+// 保護中はデモ用パスワードをゲートに表示する（デモ体験用）。
+const demoPassword = post.is_password_protected && post.body == null ? DEMO_POST_PASSWORD : null
+
+// 記事本体（公開版とプレビュー版で共通のマークアップ）
+const articleHtml = renderPostArticle(post, renderProseMirror, {
+  backHref: `${homeHref}#news`,
+  backLabel: ui.article.back,
+  ui,
+  apiLocale: lmeta.apiLocale || '',
+  postType: 'news',
+  demoPassword,
+})
+
+// SEO/OGP: 管理側の meta 設定を優先し、無ければ本文から補う。
+const pmeta = post.meta || {}
+const pageTitle = `${pmeta.meta_title || post.title} ｜ ${ui.brandSub}`
+const rawDescription = pmeta.meta_description || (post.body ? extractText(post.body) : '')
+const description = rawDescription ? String(rawDescription).replace(/\s+/g, ' ').trim().slice(0, 120) : ''
+const canonical = new URL(localeHref(locale, `posts/news/${post.slug}/`), Astro.site).toString()
+const ogImage = pmeta.og_image_url || (post.eyecatch_image && post.eyecatch_image.url) || null
+
+// 実行時（cms.js）へ渡す言語＋文言（ゲート unlock・メンテナンス）
+const runtimeI18n = { form: ui.runtime, maintenance: { resumes: ui.runtime.maintenanceResumes }, gate: ui.gate, fallbackNote: ui.fallbackNote }
+
+// 言語に応じたフォント（繁体字は中国語フォント）
+const fontFamilies = [
+  'Noto+Sans+JP:wght@400;500;600;700;900',
+  'Noto+Serif+JP:wght@600;700',
+  'JetBrains+Mono:wght@400;500',
+]
+if (lmeta.tc) fontFamilies.push('Noto+Sans+TC:wght@400;500;700', 'Noto+Serif+TC:wght@600;700')
+const fontsHref = `https://fonts.googleapis.com/css2?${fontFamilies.map((f) => 'family=' + f).join('&')}&display=swap`
+---
+<!DOCTYPE html>
+<html lang={lmeta.htmlLang}>
+<head>
+  <!-- Google Tag Manager（本番ホストのみ有効化） -->
+  <script is:inline>
+    if (location.hostname === 'demo-cms.sharedan.biz') {
+      (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+      'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+      })(window,document,'script','dataLayer','GTM-PRHD3BMS');
+    }
+  </script>
+  <!-- End Google Tag Manager -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- 速度比較用のデモサイト。検索エンジンにはインデックスさせない -->
+  <meta name="robots" content="noindex, nofollow">
+  <title>{pageTitle}</title>
+  {description && <meta name="description" content={description} />}
+  <link rel="canonical" href={canonical}>
+  <meta property="og:type" content="article">
+  <meta property="og:title" content={pmeta.meta_title || post.title}>
+  {description && <meta property="og:description" content={description} />}
+  <meta property="og:url" content={canonical}>
+  {ogImage && <meta property="og:image" content={ogImage} />}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href={fontsHref} rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <!-- 起動ゲート：メンテナンス確認が終わるまで本文を隠す（トップと同方針）。 -->
+  <script is:inline>
+    (function () {
+      var h = document.documentElement
+      h.className += (h.className ? ' ' : '') + 'sd-booting'
+      window.__sdRevealTimer = window.setTimeout(function () { h.classList.remove('sd-booting') }, 6000)
+    })()
+  </script>
+  <style is:inline>
+    html.sd-booting body { visibility: hidden; }
+    html.sd-booting #sd-maintenance { visibility: visible; }
+  </style>
+</head>
+<body>
+
+  <!-- ======= ヘッダー（トップと共通・ナビ＋言語切替） ======= -->
+  <SiteHeader locale={locale} ui={ui} homeHref={homeHref} switcherLinks={switcherLinks} />
+
+  <!-- ======= お知らせ本文（ビルド時に公開APIから焼き込み／保護中はゲート→実行時unlock） ======= -->
+  <main class="section">
+    <div class="article-wrap">
+      <Fragment set:html={articleHtml} />
+    </div>
+  </main>
+
+  <!-- ======= フッター（トップと共通） ======= -->
+  <SiteFooter ui={ui} />
+
+  <!-- 実行時の公開API連携（メンテ即時反映・パスワード unlock）設定 -->
+  <script is:inline set:html={`
+    window.SHAREDAN_LANG = ${JSON.stringify(lmeta.apiLocale || '')}
+    window.SHAREDAN_I18N = ${JSON.stringify(runtimeI18n)}
+  `}></script>
+  <!-- 実行時のみ：メンテナンス状態の即時反映＋パスワードゲート（unlock） -->
+  <script is:inline type="module" src="/js/cms.js"></script>
+</body>
+</html>

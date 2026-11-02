@@ -1,0 +1,463 @@
+---
+/* =========================================================================
+ * demo-cms トップページ（言語別・ヘッドレスCMSの静的ビルド）
+ * -------------------------------------------------------------------------
+ * コンテンツ（投稿／FAQ／代表メッセージ／製品）は **ビルド時** に公開API（IF-001）から
+ * locale 付きで取得して静的HTMLへ焼き込む（src/lib/cms.mjs）。言語切替はこの言語別ページ
+ * （/ ＝ja・/en/・/zh-Hant/）への <a> リンクで行う＝実行時の再取得なし。
+ *
+ * 実行時（ブラウザ）に残すのは「フォーム送信」と「メンテナンス即時反映」のみ（public/js/cms.js）。
+ * 会社概要／導入事例はこのテナントでは公開API非提供のため、文言辞書（i18n.mjs）で言語別に表示する。
+ * デモバー／計測バーは ShareDan 側のデモ用オーバーレイのため全言語で日本語固定（意図的）。
+ *
+ * props: locale … 'ja' | 'en' | 'zh-Hant'
+ * ========================================================================= */
+import { fetchSiteContent, resolveAvailableLocales, renderProseMirror } from '../lib/cms.mjs'
+import { uiFor, localeMeta, localeHref, fontsFor } from '../lib/i18n.mjs'
+import SiteHeader from './SiteHeader.astro'
+import SiteFooter from './SiteFooter.astro'
+
+const { locale = 'ja' } = Astro.props
+const meta = localeMeta(locale)
+const ui = uiFor(locale)
+
+// ビルド時にAPIからこの言語のコンテンツを取得（原文は apiLocale=null）。
+const { posts, faqs, topMessage, products } = await fetchSiteContent(meta.apiLocale)
+
+// 言語切替リンク（実際に生成できる言語だけ・原文 ja を含む）。
+const availableCodes = await resolveAvailableLocales()
+const switcherLinks = availableCodes.map((code) => ({
+  code,
+  label: localeMeta(code).label,
+  href: localeHref(code, ''),
+}))
+const homeHref = localeHref(locale, '')
+
+// 投稿カテゴリ slug→チップ配色（css/style.css と一致）。製品は並び順でチップ色を割り当てる
+// （分類名は言語別に翻訳されるため名前一致ではなく位置で色を安定させる・シードの製品順に対応）。
+const POST_CHIP_CLASS = { event: 'chip--event', product: 'chip--product', info: 'chip--info', press: 'chip--press' }
+const PRODUCT_CHIP_BY_INDEX = ['chip--pmachine', 'chip--pmachine', 'chip--mold', 'chip--micro', 'chip--heat', 'chip--inspect']
+
+// published_at（ISO8601）を YYYY.MM.DD へ（TZずれ回避のため文字列先頭を使う）
+const fmtDate = (iso) => (iso ? String(iso).slice(0, 10).replace(/-/g, '.') : '')
+
+// 代表メッセージ（固定コンテンツ top-message・ProseMirror）: 見出し→タイトル・段落→本文。代表者ブロックは辞書。
+const messageBlocks = (topMessage && topMessage.body && topMessage.body.content) || []
+const messageHeading = messageBlocks.find((n) => n.type === 'heading')
+const messageParagraphs = messageBlocks.filter((n) => n.type === 'paragraph')
+const messageTitleHtml = messageHeading ? renderProseMirror(messageHeading.content) : (topMessage && topMessage.name) || ''
+const messageBodyHtml = renderProseMirror(messageParagraphs)
+
+// 製品ラインアップ（固定コンテンツ products・テーブル）: 先頭はヘッダー行なので除く。
+const productRows = ((products && products.body && products.body.rows) || []).slice(1)
+
+// FAQ回答（ProseMirror）をHTML化し、先頭段落にデザインのクラスを付与する。
+const faqAnswerHtml = (f) => renderProseMirror(f.answer).replace('<p>', '<p class="faq-a__text">')
+
+// ページタイトル／説明（デモは noindex のためSEO影響なし）
+const pageTitle = locale === 'ja'
+  ? 'DEMO株式会社 ｜ ものづくりの先へ、精度で応える。'
+  : `${ui.brandSub} ｜ ${ui.hero.title1}${ui.hero.title2}`
+const pageDescription = ui.hero.lead
+
+// 言語に応じたフォント（繁体字は中国語フォント）。
+const fonts = fontsFor(locale)
+const fontFamilies = [
+  'Noto+Sans+JP:wght@400;500;600;700;900',
+  'Noto+Serif+JP:wght@600;700',
+  'JetBrains+Mono:wght@400;500',
+]
+if (meta.tc) fontFamilies.push('Noto+Sans+TC:wght@400;500;700', 'Noto+Serif+TC:wght@600;700')
+const fontsHref = `https://fonts.googleapis.com/css2?${fontFamilies.map((f) => 'family=' + f).join('&')}&display=swap`
+
+// 実行時（cms.js）へ渡す言語＋文言（フォーム送信・メンテナンス）
+const runtimeI18n = { form: ui.runtime, maintenance: { resumes: ui.runtime.maintenanceResumes } }
+---
+<!DOCTYPE html>
+<html lang={meta.htmlLang}>
+<head>
+  <!-- Google Tag Manager（本番ホストのみ有効化） -->
+  <script is:inline>
+    if (location.hostname === 'demo-cms.sharedan.biz') {
+      (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+      'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+      })(window,document,'script','dataLayer','GTM-PRHD3BMS');
+    }
+  </script>
+  <!-- End Google Tag Manager -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- 速度比較用のデモサイト。検索エンジンにはインデックスさせない -->
+  <meta name="robots" content="noindex, nofollow">
+  <title>{pageTitle}</title>
+  <meta name="description" content={pageDescription}>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href={fontsHref} rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <!-- 起動ゲート：メンテナンス確認が終わるまで本文を隠し、メンテナンス中に実サイトが一瞬見えるのを防ぐ。 -->
+  <script is:inline>
+    (function () {
+      var h = document.documentElement
+      h.className += (h.className ? ' ' : '') + 'sd-booting'
+      window.__sdRevealTimer = window.setTimeout(function () { h.classList.remove('sd-booting') }, 6000)
+    })()
+  </script>
+  <style is:inline>
+    html.sd-booting body { visibility: hidden; }
+    html.sd-booting #sd-maintenance { visibility: visible; }
+  </style>
+</head>
+<body>
+
+  <!-- ======= デモ用バー（ShareDan のデモ用オーバーレイ・全言語で日本語固定） ======= -->
+  <div class="demo-bar">
+    <div class="demo-bar__left">
+      <span class="demo-bar__title">ShareDan <span>CMS</span> デモサイト</span>
+      <span class="demo-bar__sep"></span>
+      <span class="demo-bar__note">管理画面の更新が、このページに反映されます</span>
+    </div>
+    <div class="demo-bar__right">
+      <span class="demo-bar__label">同じデザインで比較</span>
+      <div class="mode-switch">
+        <button type="button" class="mode-btn is-active" data-mode="cms">ShareDan CMS</button>
+        <button type="button" class="mode-btn" data-mode="wp">WordPress</button>
+      </div>
+      <button type="button" class="ghost-btn" data-reload>再読み込み</button>
+      <button type="button" class="api-btn" data-toggle-api>計測を表示 <span data-api-label>OFF</span></button>
+    </div>
+  </div>
+
+  <!-- ======= 速度比較バー（計測を表示ONのとき） ======= -->
+  <div class="speed-bar">
+    <div class="speed-bar__inner">
+      <div class="speed-bar__mode">
+        <span class="mode-badge" data-mode-badge>ShareDan CMS版</span>
+        <span class="speed-bar__for">で表示中</span>
+      </div>
+      <div class="speed-bar__meters">
+        <div class="meter">
+          <div class="meter__head">
+            <span class="meter__label">ShareDan CMS（ヘッドレス・Astro静的ビルド＋CDN）</span>
+            <span class="meter__val is-cms"><span data-cms-total>96</span>ms</span>
+          </div>
+          <div class="meter__track"><div class="meter__fill is-cms" data-cms-fill style="width:8%"></div></div>
+        </div>
+        <div class="meter">
+          <div class="meter__head">
+            <span class="meter__label">WordPress（PHP＋DB・同一デザイン）</span>
+            <span class="meter__val is-wp"><span data-wp-total>1180</span>ms</span>
+          </div>
+          <div class="meter__track"><div class="meter__fill is-wp" style="width:100%"></div></div>
+        </div>
+      </div>
+      <div class="speed-bar__ratio">
+        <span class="speed-bar__ratio-num"><span data-ratio>12.3</span>倍</span>
+        <span class="speed-bar__ratio-txt">高速</span>
+      </div>
+    </div>
+    <div class="speed-bar__note">同一デザインで、コンテンツ取得方法だけを入れ替えた比較です。WordPress側はテーマ描画＋DBクエリ、ShareDan CMS側は GitHub Actions（CI/CD）上で Astro が公開API（JSON）の値から静的ビルドしたHTMLを CDN から配信しています。</div>
+  </div>
+
+  <!-- ======= ヘッダー（ナビ＋言語切替） ======= -->
+  <SiteHeader locale={locale} ui={ui} homeHref={homeHref} switcherLinks={switcherLinks} />
+
+  <!-- ======= ヒーロー ======= -->
+  <section class="hero">
+    <div class="hero__inner">
+      <div>
+        <div class="hero__eyebrow">{ui.hero.eyebrow}</div>
+        <h1 class="hero__title">{ui.hero.title1}<br>{ui.hero.title2}</h1>
+        <p class="hero__lead">{ui.hero.lead}</p>
+        <div class="hero__actions">
+          <a href="#works" class="btn btn--primary">{ui.hero.ctaWorks}</a>
+          <a href="#contact" class="btn btn--ghost-dark">{ui.nav.contact}</a>
+        </div>
+      </div>
+      <div class="hero__visual">
+        <b>HERO VISUAL</b>
+        <small>{ui.message.photo}</small>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= 代表メッセージ（固定コンテンツ・ビルド時にAPIから描画） ======= -->
+  <section id="about" class="section">
+    <div class="section__inner">
+      <div class="split">
+        <div>
+          <div class="eyebrow">{ui.message.eyebrow}</div>
+          <div class="sec-title">{ui.message.title}</div>
+        </div>
+        <div class="message">
+          <h2 class="message__title" set:html={messageTitleHtml}></h2>
+          <Fragment set:html={messageBodyHtml} />
+          <div class="rep">
+            <div class="rep__photo">{ui.message.photo}</div>
+            <div>
+              <div class="rep__role">{ui.message.repRole}</div>
+              <div class="rep__name">{ui.message.repName}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= 会社概要（API非提供のため文言辞書） ======= -->
+  <section class="section section--panel">
+    <div class="section__inner section__inner--tight">
+      <div class="split">
+        <div>
+          <div class="eyebrow">{ui.company.eyebrow}</div>
+          <div class="sec-title">{ui.company.title}</div>
+        </div>
+        <table class="profile">
+          <tbody>
+            {ui.company.rows.map((row) => (
+              <tr>
+                <th>{row[0]}</th>
+                <td>{row[1]}{row[2] && <br />}{row[2] && <small>{row[2]}</small>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= お知らせ（既定種別 posts/news をビルド時にAPIから描画） ======= -->
+  <section id="news" class="section">
+    <div class="section__inner">
+      <div class="news-head">
+        <div>
+          <div class="eyebrow">{ui.news.eyebrow}</div>
+          <div class="sec-title">{ui.news.title}</div>
+        </div>
+        <div class="tabs">
+          {ui.news.tabs.map(([cat, label], i) => (
+            <button type="button" class:list={['tab', { 'is-active': i === 0 }]} data-news-tab={cat}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <div class="news-list">
+        {posts.map((p) => {
+          const slug = (p.category && p.category.slug) || 'info'
+          const chipClass = POST_CHIP_CLASS[slug] || 'chip--info'
+          const catName = (p.category && p.category.name) || ui.article.fallbackCat
+          return (
+            <a href={localeHref(locale, `posts/news/${p.slug}/`)} class="news-item" data-cat={slug}>
+              <span class="news-item__date">{fmtDate(p.published_at)}</span>
+              <span class={`chip ${chipClass}`}>{catName}</span>
+              <span class="news-item__title">{p.title}</span>
+              {p.is_password_protected && (
+                <span class="news-lock">
+                  <svg class="news-lock__icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+                  {ui.news.lockedTag}
+                </span>
+              )}
+              <span class="news-item__arrow">›</span>
+            </a>
+          )
+        })}
+      </div>
+      <div class="news-count" data-news-count data-count-tpl={ui.news.countTpl}>{ui.news.countTpl.replace('{n}', posts.length)}</div>
+    </div>
+  </section>
+
+  <!-- ======= 導入事例（API非提供のため文言辞書） ======= -->
+  <section id="works" class="section section--panel">
+    <div class="section__inner">
+      <div class="center-head">
+        <div class="eyebrow">{ui.works.eyebrow}</div>
+        <div class="sec-title">{ui.works.title}</div>
+      </div>
+      <div class="works-grid">
+        {ui.works.cards.map(([cat, title, desc], i) => (
+          <div class="work-card">
+            <div class={`work-card__thumb ${i % 2 ? 'work-card__thumb--b' : 'work-card__thumb--a'}`}>{ui.works.photo}</div>
+            <div class="work-card__body">
+              <div class="work-card__cat">{cat}</div>
+              <div class="work-card__title">{title}</div>
+              <p class="work-card__desc">{desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= 製品ラインアップ（固定コンテンツ / テーブル → 横スライドのカード） ======= -->
+  <section id="products" class="section products" data-products>
+    <div class="products-head-inner">
+      <div class="products-head">
+        <div>
+          <div class="eyebrow">{ui.products.eyebrow}</div>
+          <div class="sec-title">{ui.products.title}</div>
+          <p class="products-lead">{ui.products.lead}</p>
+        </div>
+        <div class="products-nav">
+          <span class="products-count"><span data-products-pos>1</span> / <span data-products-max>1</span></span>
+          <button type="button" class="pc-arrow" data-products-prev aria-label={ui.products.prev}>‹</button>
+          <button type="button" class="pc-arrow" data-products-next aria-label={ui.products.next}>›</button>
+        </div>
+      </div>
+    </div>
+    <div class="products-viewport" data-products-viewport>
+      <div class="products-track" data-products-track>
+        {productRows.map((cols, index) => {
+          const isNew = String(cols[6] || '').trim() !== ''
+          const chipClass = PRODUCT_CHIP_BY_INDEX[index] || 'chip--info'
+          const thumbVariant = index % 2 ? 'product-card__thumb--b' : 'product-card__thumb--a'
+          return (
+            <a href="#contact" class="product-card">
+              <div class={`product-card__thumb ${thumbVariant}`}>
+                <span class="product-card__photo">{ui.products.photo}</span>
+                <span class="product-card__code">{cols[0]}</span>
+              </div>
+              <div class="product-card__body">
+                <div class="product-card__tags"><span class={`chip ${chipClass}`}>{cols[1]}</span>{isNew && <span class="product-card__new">NEW</span>}</div>
+                <div class="product-card__name">{cols[2]}</div>
+                <p class="product-card__desc">{cols[3]}</p>
+                <div class="product-card__spec"><span class="product-card__spec-label">{cols[4]}</span><span class="product-card__spec-value">{cols[5]}</span></div>
+              </div>
+            </a>
+          )
+        })}
+      </div>
+    </div>
+    <div class="products-dots" data-products-dots></div>
+  </section>
+
+  <!-- ======= FAQ（ビルド時にAPIから描画） ======= -->
+  <section id="faq" class="section">
+    <div class="section__inner">
+      <div class="center-head">
+        <div class="eyebrow">{ui.faq.eyebrow}</div>
+        <div class="sec-title">{ui.faq.title}</div>
+      </div>
+      <div class="tabs tabs--center">
+        {ui.faq.tabs.map(([cat, label], i) => (
+          <button type="button" class:list={['tab', { 'is-active': i === 0 }]} data-faq-tab={cat}>{label}</button>
+        ))}
+      </div>
+      <div class="faq-list">
+        {faqs.map((f, i) => {
+          const slug = (f.category && f.category.slug) || 'other'
+          return (
+            <div class:list={['faq-item', { 'is-open': i === 0 }]} data-cat={slug}>
+              <button type="button" class="faq-q">
+                <span class="faq-q__mark">Q</span>
+                <span class="faq-q__text">{f.question}</span>
+                <span class="faq-q__icon">＋</span>
+              </button>
+              <div class="faq-a"><div class="faq-a__inner"><span class="faq-a__mark">A</span><Fragment set:html={faqAnswerHtml(f)} /></div></div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= お問い合わせ（静的フォールバック。実送信は js/cms.js がAPI項目で差し替え） ======= -->
+  <section id="contact" class="section section--panel">
+    <div class="section__inner">
+      <div class="contact-grid">
+        <div>
+          <div class="eyebrow">{ui.contact.eyebrow}</div>
+          <div class="sec-title contact-title">{ui.contact.title}</div>
+          <p class="contact-lead">{ui.contact.lead}</p>
+          <div class="contact-card">
+            <div>
+              <div class="contact-card__label">{ui.contact.telLabel}</div>
+              <div class="contact-card__tel">{ui.contact.tel}</div>
+              <div class="contact-card__hours">{ui.contact.hours}</div>
+            </div>
+            <div class="contact-card__block">
+              <div class="contact-card__label">{ui.contact.faxLabel}</div>
+              <div class="contact-card__fax">{ui.contact.fax}</div>
+            </div>
+          </div>
+        </div>
+        <div class="form-box" data-form-box>
+          <form class="form" data-form>
+            <div class="form-row2">
+              <div class="field">
+                <label>{ui.contact.fields.company} <span class="req">*</span></label>
+                <input type="text" placeholder={ui.contact.placeholders.company} required>
+              </div>
+              <div class="field">
+                <label>{ui.contact.fields.name} <span class="req">*</span></label>
+                <input type="text" placeholder={ui.contact.placeholders.name} required>
+              </div>
+            </div>
+            <div class="form-row2">
+              <div class="field">
+                <label>{ui.contact.fields.email} <span class="req">*</span></label>
+                <input type="email" placeholder={ui.contact.placeholders.email} required>
+              </div>
+              <div class="field">
+                <label>{ui.contact.fields.tel}</label>
+                <input type="tel" placeholder={ui.contact.placeholders.tel}>
+              </div>
+            </div>
+            <div class="field">
+              <label>{ui.contact.fields.type} <span class="req">*</span></label>
+              <select required>
+                {ui.contact.options.map((o) => <option>{o}</option>)}
+              </select>
+            </div>
+            <div class="field">
+              <label>{ui.contact.fields.body} <span class="req">*</span></label>
+              <textarea rows="5" placeholder={ui.contact.placeholders.body} required></textarea>
+            </div>
+            <div class="field">
+              <label>{ui.contact.fields.attach}</label>
+              <div class="dropzone">
+                <span class="dropzone__text">{ui.contact.dropzone}</span>
+                <span class="dropzone__or">{ui.contact.dropzoneOr}</span>
+                <button type="button" class="dropzone__btn">{ui.contact.dropzoneBtn}</button>
+              </div>
+              <div class="field-hint">{ui.contact.hint}</div>
+            </div>
+            <label class="consent">
+              <input type="checkbox" required>
+              <span>{ui.contact.consentBefore}<a href="#">{ui.contact.consentLink}</a>{ui.contact.consentAfter} <span class="req">*</span></span>
+            </label>
+            <div class="turnstile">
+              <div class="turnstile__box"></div>
+              <div class="turnstile__label">{ui.contact.turnstile}</div>
+              <div class="turnstile__brand">Cloudflare<br>Turnstile</div>
+            </div>
+            <button type="submit" class="form-submit">{ui.contact.submit}</button>
+          </form>
+          <div class="form-success">
+            <div class="form-success__check">✓</div>
+            <div class="form-success__title">{ui.contact.successTitle}</div>
+            <p class="form-success__text" set:html={ui.contact.successText}></p>
+            <button type="button" class="form-success__again" data-reset-form>{ui.contact.successAgain}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= フッター ======= -->
+  <SiteFooter ui={ui} />
+
+  <!-- 比較先サイトのURL／実行時の公開API連携（メンテ即時反映・フォーム送信）設定 -->
+  <script is:inline set:html={`
+    window.SAMPLE_URLS = {
+      cms: 'https://demo-cms.sharedan.biz/',
+      wp: 'https://demo-wp.sharedan.biz/',
+    }
+    window.SHAREDAN_LANG = ${JSON.stringify(meta.apiLocale || '')}
+    window.SHAREDAN_I18N = ${JSON.stringify(runtimeI18n)}
+  `}></script>
+  <script is:inline src="/js/main.js"></script>
+  <!-- 実行時のみ：メンテナンス状態の即時反映＋お問い合わせフォーム（項目定義・Turnstile・実送信） -->
+  <script is:inline type="module" src="/js/cms.js"></script>
+</body>
+</html>

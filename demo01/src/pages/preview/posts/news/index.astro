@@ -1,0 +1,182 @@
+---
+/* =========================================================================
+ * demo-cms 投稿「プレビュー」ページ（既定種別 お知らせ・下書き版・実行時レンダリング）
+ * -------------------------------------------------------------------------
+ * ShareDanCMS の管理画面（投稿編集 SCR-104）の「プレビュー」ボタンから開かれる。
+ * CMS に設定するプレビューURLテンプレート（サイト設定・投稿種別ごと）はこのページを指す:
+ *
+ *   https://demo-cms.sharedan.biz/preview/posts/news/?slug={SLUG}&token={PREVIEW_TOKEN}
+ *
+ * このサイトは静的ホスティング（さくらのレンタルサーバ・output:'static'）で、トークンは
+ * 実行時にしか決まらないため、プレビュー取得は必ず **ブラウザ側** で行う（SSGできない）。
+ * クエリの slug / token を読み、SDK の cms.posts.getPreview()（下書き版）で取得して、
+ * 公開詳細ページ（posts/news/[slug].astro）と同じ renderPostArticle() で描画する
+ * （要件 §10/§12 の表示共通化）。
+ *
+ *   cms.posts.getPreview('news', slug, token)
+ *     ＝ GET {origin}/api/v1/posts/news/{slug}/preview
+ *       ヘッダ: X-API-KEY / X-SITE-CODE / X-PREVIEW-TOKEN（SDKがトークンをヘッダで送る・要件 §7.4）
+ *
+ * トークン不正・期限切れ・失効・不存在はいずれも 404（存在秘匿・要件 §5.2/§13。SDKでは isNotFound）。
+ * 検索エンジンにインデックスさせないため noindex,nofollow を必須とする（要件 §8）。
+ * ========================================================================= */
+---
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- プレビューは検索エンジンにインデックスさせない（要件 §8。GTM等の解析タグも載せない・§7.4） -->
+  <meta name="robots" content="noindex, nofollow">
+  <title>プレビュー ｜ DEMO株式会社</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;900&family=Noto+Serif+JP:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <!-- プレビュー取得も同一オリジンのサーバー側プロキシ（/api/cms-proxy.php）経由。X-API-KEY は
+       プロキシがサーバー側で付与するため鍵はブラウザに出さない。ローカルで公開APIを直叩きする場合のみ
+       window.SHAREDAN_CMS = { origin:'http://localhost:8091', apiKey:'...', siteCode:'demo-cms' } をここに定義する。 -->
+</head>
+<body>
+
+  <!-- ======= プレビュー中バナー（下書き版を表示していることを明示） ======= -->
+  <div class="preview-banner">
+    <span class="preview-banner__dot"></span>
+    <span class="preview-banner__text">プレビュー表示中 — これは<strong>下書き（未公開）</strong>の内容です。公開サイトには反映されていません。</span>
+  </div>
+
+  <!-- ======= ヘッダー（公開ページと共通のデザイン） ======= -->
+  <header class="site-header">
+    <div class="site-header__inner">
+      <a class="brand" href="/" aria-label="トップへ">
+        <span class="brand__logo">DEMO<span>.</span></span>
+        <span class="brand__sub">DEMO株式会社</span>
+      </a>
+      <nav class="gnav">
+        <a href="/#about">私たちについて</a>
+        <a href="/#news">お知らせ</a>
+        <a href="/#works">導入事例</a>
+        <a href="/#products">製品</a>
+        <a href="/#faq">よくある質問</a>
+        <a href="/#contact" class="gnav__cta">お問い合わせ</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ======= プレビュー本文（実行時に cms.posts.getPreview → renderPostArticle で描画） ======= -->
+  <main class="section">
+    <div class="article-wrap">
+      <div id="preview-root" data-preview-root>
+        <div class="preview-status" data-preview-loading>
+          <span class="preview-status__spinner" aria-hidden="true"></span>
+          プレビューを読み込んでいます…
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ======= フッター（公開ページと共通） ======= -->
+  <footer class="site-footer">
+    <div class="site-footer__inner">
+      <div>
+        <div class="site-footer__logo">DEMO<span>.</span></div>
+        <div class="site-footer__addr">DEMO株式会社　〒146-0093 東京都大田区矢口3-12-8</div>
+      </div>
+      <div class="site-footer__right">
+        © 2026 DEMO CO., LTD.<br>
+        <span>Powered by ShareDan CMS ／ ©ShareDan CO. ,Ltd.</span>
+      </div>
+    </div>
+  </footer>
+
+  <!--
+    プレビュー取得＋描画（Astro/Vite がバンドルする通常スクリプト）。
+    取得は SDK（@sharedan/cms-sdk）の cms.posts.getPreview('news', slug, token)（＝ /api/v1/posts/news/{slug}/preview）で行う。
+    記事本体は公開詳細ページと同じ renderPostArticle() で組み立て、下書き版と公開版の見た目を一致させる。
+  -->
+  <script>
+    import { ShareDanCmsClient, ShareDanCmsApiError, renderProseMirror } from '@sharedan/cms-sdk'
+    import { renderPostArticle } from '../../../../lib/post-article.mjs'
+
+    // このデモがプレビューする投稿の種別（既定種別「お知らせ」の slug）。
+    const POST_TYPE = 'news'
+
+    // 接続は cms.js と同一方針。既定は同一オリジンのサーバー側プロキシ（/api/cms-proxy.php）経由で、
+    // X-API-KEY はプロキシがサーバー側で付与する（鍵はブラウザに出さない）。プレビュートークンは
+    // SDK が X-PREVIEW-TOKEN ヘッダで送り、プロキシがそれを上流へ透過する。
+    const CONFIG = {
+      origin: null, // 明示すると直叩き。null なら同一オリジンのプロキシ経由（既定）。
+      apiKey: null, // プロキシ経由では不要（サーバー側で付与）。直叩き時のみ指定する。
+      siteCode: 'demo-cms',
+    }
+    if (window.SHAREDAN_CMS && typeof window.SHAREDAN_CMS === 'object') {
+      for (const key in window.SHAREDAN_CMS) {
+        if (window.SHAREDAN_CMS[key] != null) CONFIG[key] = window.SHAREDAN_CMS[key]
+      }
+    }
+    function resolveBaseUrl() {
+      if (CONFIG.origin) return CONFIG.origin
+      return window.location.origin + '/api/cms-proxy.php'
+    }
+
+    const cms = new ShareDanCmsClient({
+      baseUrl: resolveBaseUrl(),
+      apiKey: CONFIG.apiKey || 'via-proxy',
+      siteCode: CONFIG.siteCode,
+      timeoutMs: 8000,
+    })
+
+    const root = document.querySelector('[data-preview-root]')
+
+    // トークン不正／期限切れ／失効／不存在は 404 に統一されるため、同じ案内を表示する（要件 §13）。
+    const INVALID_MESSAGE =
+      'プレビューURLが無効か、有効期限が切れています。<br>CMS管理画面から再度プレビューを実行してください。'
+
+    function showError(message) {
+      root.innerHTML =
+        '<div class="preview-status preview-status--error">' +
+        '<div class="preview-status__icon" aria-hidden="true">!</div>' +
+        '<p class="preview-status__msg">' +
+        message +
+        '</p>' +
+        '<a class="btn btn--outline" href="/#news">お知らせ一覧へ</a>' +
+        '</div>'
+    }
+
+    async function loadPreview() {
+      const params = new URLSearchParams(window.location.search)
+      const slug = params.get('slug')
+      const token = params.get('token')
+      if (!slug || !token) {
+        showError(INVALID_MESSAGE)
+        return
+      }
+
+      let post
+      try {
+        // トークンは X-PREVIEW-TOKEN ヘッダで送られる（SDK内部。クエリよりヘッダ推奨・要件 §7.4）。
+        post = await cms.posts.getPreview(POST_TYPE, slug, token)
+      } catch (err) {
+        if (err instanceof ShareDanCmsApiError) {
+          // 404（トークン不正／期限切れ／失効／対象不一致・存在秘匿）は無効案内に統一する。
+          if (err.isNotFound) {
+            showError(INVALID_MESSAGE)
+            return
+          }
+          showError('プレビューの取得に失敗しました（コード ' + err.status + '）。時間をおいて再度お試しください。')
+          return
+        }
+        // ネットワーク到達不能・タイムアウト・CORS 等（ShareDanCmsNetworkError ほか）。
+        showError('プレビューの取得に失敗しました。通信環境を確認して、もう一度お試しください。')
+        return
+      }
+
+      root.innerHTML = renderPostArticle(post, renderProseMirror)
+      if (post && post.title) document.title = post.title + '（プレビュー） ｜ DEMO株式会社'
+    }
+
+    loadPreview()
+  </script>
+
+</body>
+</html>
